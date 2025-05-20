@@ -99,13 +99,12 @@
               size="sm"
             />
           </div>
-          <q-input
+          <MonacoEditor
             v-model="formData.code"
-            type="textarea"
-            outlined
-            :rules="[(val) => !!val || 'Code is required']"
+            :language="formData.inputType === 'vue' ? 'vue' : 'html'"
+            height="300px"
+            theme="vs"
             class="code-editor"
-            :input-style="{ fontFamily: 'monospace', minHeight: '300px' }"
           />
         </div>
 
@@ -157,6 +156,7 @@
 import { ref, watch } from "vue";
 import { useQuasar } from "quasar";
 import ComponentViewer from "./ComponentViewer.vue";
+import MonacoEditor from "./MonacoEditor.vue";
 
 const $q = useQuasar();
 
@@ -279,6 +279,15 @@ watch(
     }
   }
 );
+
+// Watch for input type changes to update the editor language
+watch(
+  () => formData.value.inputType,
+  () => {
+    // The language will be updated automatically through the :language binding
+    // This watch is here in case we need to add more logic in the future
+  }
+);
 </script>
 
 <style scoped>
@@ -287,17 +296,13 @@ watch(
 }
 
 .code-editor {
-  font-family: "Courier New", monospace;
+  width: 100%;
+  border-radius: 4px;
+  overflow: hidden;
 }
 
-:deep(.code-editor .q-field__control) {
-  min-height: 300px;
-  align-items: flex-start;
-}
-
-:deep(.code-editor textarea) {
-  font-family: "Courier New", monospace;
-  line-height: 1.5;
-  padding: 16px;
+:deep(.monaco-editor) {
+  border-radius: 4px;
+  padding: 0;
 }
 </style>
