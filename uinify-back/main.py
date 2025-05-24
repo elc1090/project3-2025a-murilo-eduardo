@@ -1,6 +1,7 @@
 from sqlalchemy import Column, ForeignKey, Integer, String, Text, create_engine
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, relationship
+from sqlalchemy import event
 
 from flask import Flask, request, jsonify
 
@@ -12,6 +13,13 @@ conn = engine.connect()
 
 Session = sessionmaker(bind=engine)
 Base = declarative_base()
+
+
+@event.listens_for(engine, "connect")
+def set_sqlite_pragma(dbapi_connection, connection_record):
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
 
 
 class Component(Base):
@@ -35,6 +43,13 @@ class User(Base):
     username = Column(String(128), unique=True, nullable=False)
     password = Column(String(128), nullable=False)
 
+    components = relationship(
+        "UserComponent",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
     def __repr__(self):
         return f"<User(name='{self.username}', password='{self.password}')>"
 
@@ -51,6 +66,8 @@ class UserComponent(Base):
     component_id = Column(
         Integer, ForeignKey("components.id", ondelete="CASCADE"), primary_key=True
     )
+
+    user = relationship("User", back_populates="components")
 
     def __repr__(self):
         return f"<UserComponent(user_id='{self.user_id}', component_id='{self.component_id}')>"
@@ -99,6 +116,7 @@ def user_get(id):
         except Exception as e:
             return jsonify(error=str(e)), 500
 
+
 @app.route("/user/<int:id>", methods=["DELETE"])
 def user_delete(id):
     with Session() as session:
@@ -118,12 +136,7 @@ def user_delete(id):
 def user_components_get(id):
     with Session() as session:
         try:
-            components = (
-                session.query(Component)
-                .join(UserComponent, Component.id == UserComponent.component_id)
-                .filter(UserComponent.user_id == id)
-                .all()
-            )
+            components = session.get(User, id).components
             return jsonify([component.to_dict() for component in components]), 200
         except Exception as e:
             return jsonify(error=str(e)), 500
