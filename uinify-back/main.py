@@ -1,18 +1,14 @@
-from passlib.context import CryptContext
 from sqlalchemy import Column, ForeignKey, Integer, String, Text, create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
 from flask import Flask, request, jsonify
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
 app = Flask(__name__)
 
 # engine = create_engine("sqlite:///:memory:", echo=True)
 engine = create_engine("sqlite:///uinify.db", echo=True)
 conn = engine.connect()
-conn.execute("PRAGMA foreign_keys=ON")
 
 Session = sessionmaker(bind=engine)
 Base = declarative_base()
@@ -63,21 +59,6 @@ class UserComponent(Base):
 Base.metadata.create_all(engine)
 
 
-def hash_password(password):
-    return pwd_context.hash(password)
-
-
-def verify_password(plain, hashed):
-    return pwd_context.verify(plain, hashed)
-
-
-def authenticate_user(session, username, password):
-    user = session.query(User).filter_by(username=username).first()
-    if not user:
-        return False
-    return verify_password(password, user.password)
-
-
 @app.route("/users", methods=["GET"])
 def users_get():
     with Session() as session:
@@ -98,7 +79,7 @@ def user_post():
 
     with Session() as session:
         try:
-            user = User(username=r["username"], password=hash_password(r["password"]))
+            user = User(username=r["username"], password=r["password"])
             session.add(user)
             session.commit()
             return jsonify(user.to_dict()), 200
@@ -116,6 +97,20 @@ def user_get(id):
                 return jsonify(error=f"User '{id}' not found."), 404
             return user.to_dict(), 200
         except Exception as e:
+            return jsonify(error=str(e)), 500
+
+@app.route("/user/<int:id>", methods=["DELETE"])
+def user_delete(id):
+    with Session() as session:
+        try:
+            user = session.get(User, id)
+            if user is None:
+                return jsonify(error=f"User '{id}' not found."), 404
+            session.delete(user)
+            session.commit()
+            return jsonify(user.to_dict()), 200
+        except Exception as e:
+            session.rollback()
             return jsonify(error=str(e)), 500
 
 
