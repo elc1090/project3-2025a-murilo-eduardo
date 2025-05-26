@@ -7,12 +7,18 @@
           <img src="assets/uinify-logo.png" class="cursor-pointer h-[50px]" />
         </div>
         <h1 class="text-3xl font-bold text-gray-900 mb-2">
-          Share Your Components
+          {{ isEditMode ? "Edit Component" : "Share Your Components" }}
         </h1>
         <p class="text-lg text-gray-600 max-w-2xl mx-auto">
-          Upload your Vue, React, or HTML component to the UInify community.
-          <br />
-          Help us build a unified library of components.
+          {{
+            isEditMode
+              ? "Update your component details and code below."
+              : "Upload your Vue, React, or HTML component to the UInify community."
+          }}
+          <br v-if="!isEditMode" />
+          <span v-if="!isEditMode"
+            >Help us build a unified library of components.</span
+          >
         </p>
       </div>
 
@@ -59,7 +65,11 @@
 
         <!-- Main Form -->
         <div class="lg:col-span-3">
-          <ComponentUploadForm />
+          <ComponentUploadForm
+            :component-data="componentData"
+            :is-edit-mode="isEditMode"
+            :component-id="componentId"
+          />
         </div>
       </div>
     </div>
@@ -67,8 +77,20 @@
 </template>
 
 <script setup>
-import { ref } from "vue";
+import { ref, onMounted, computed } from "vue";
 import ComponentUploadForm from "../components/ComponentUploadForm.vue";
+import { useRoute } from "vue-router";
+import { getComponentById } from "src/services/DefaultService";
+
+// Props for route parameters
+const props = defineProps({
+  id: {
+    type: String,
+    default: null,
+  },
+});
+
+const route = useRoute();
 
 const popularTags = ref([
   "Vue3",
@@ -82,6 +104,35 @@ const popularTags = ref([
   "Responsive",
   "Dashboard",
 ]);
+
+const componentData = ref(null);
+
+// Computed to get component ID from props or route
+const componentId = computed(() => {
+  return props.id || route.params.id;
+});
+
+// Computed to determine if we're in edit mode
+const isEditMode = computed(() => {
+  return !!componentId.value;
+});
+
+const fetchComponentData = async () => {
+  if (!componentId.value) return;
+
+  try {
+    const { data } = await getComponentById(componentId.value);
+    componentData.value = data;
+  } catch (error) {
+    console.error("Error fetching component data:", error);
+  }
+};
+
+onMounted(() => {
+  if (componentId.value) {
+    fetchComponentData();
+  }
+});
 </script>
 
 <style scoped>

@@ -114,11 +114,14 @@
           class="mt-4"
         />
 
+        <!-- Temporarily disabled Quasar option -->
+        <!--
         <q-checkbox
           v-model="formData.includeQuasar"
           label="Include Quasar Framework"
           class="mt-2"
         />
+        -->
       </div>
 
       <!-- Preview Section -->
@@ -157,8 +160,11 @@ import { ref, watch } from "vue";
 import { useQuasar } from "quasar";
 import ComponentViewer from "./ComponentViewer.vue";
 import MonacoEditor from "./MonacoEditor.vue";
+import { saveComponent } from "src/services/DefaultService";
+import { useAuthStore } from "stores/auth";
 
 const $q = useQuasar();
+const auth = useAuthStore();
 
 const formData = ref({
   title: "",
@@ -168,19 +174,84 @@ const formData = ref({
   tags: "",
   tagsArray: [],
   code: `<template>
-  <div class="p-4 bg-white rounded-lg shadow-sm">
-    <h2 class="text-xl font-semibold mb-2">New Component</h2>
-    <p class="text-gray-600">Edit this code to create your component</p>
-    <q-btn
-      color="primary"
-      label="Click Me"
-      class="mt-4"
-    />
+  <div class="p-6 bg-white rounded-lg shadow-lg border border-gray-200">
+    <h2 class="text-2xl font-bold text-gray-800 mb-3">{{ title }}</h2>
+    <p class="text-gray-600 mb-4">{{ description }}</p>
+
+    <button
+      @click="handleClick"
+      class="bg-blue-500 hover:bg-blue-600 text-white font-medium py-2 px-4 rounded-md transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+    >
+      Click Me
+    </button>
+
+    <div
+      v-if="clicked"
+      class="mt-4 inline-block bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm font-medium animate-pulse border border-green-200"
+    >
+      ✅ Button clicked successfully!
+    </div>
+
+    <div class="mt-4 flex items-center justify-between">
+      <div class="text-sm text-gray-500">
+        Count: <span class="font-semibold text-gray-700">{{ clickCount }}</span>
+      </div>
+      <button
+        v-if="clickCount > 0"
+        @click="resetCount"
+        class="text-xs text-red-500 hover:text-red-700 underline"
+      >
+        Reset
+      </button>
+    </div>
+
+    <div v-if="clickCount >= 5" class="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+      <p class="text-sm text-yellow-800">
+        🎉 Wow! You've clicked {{ clickCount }} times! You're really testing this component!
+      </p>
+    </div>
   </div>
-</template>`,
+</template>
+
+<script setup>
+import { ref, computed, onMounted } from 'vue'
+
+// Reactive data
+const title = ref('New Component')
+const description = ref('Edit this code to create your component with Vue 3 + Tailwind')
+const clicked = ref(false)
+const clickCount = ref(0)
+
+// Computed properties
+const isActive = computed(() => clickCount.value > 0)
+
+// Methods
+const handleClick = () => {
+  clicked.value = true
+  clickCount.value++
+
+  console.log('Button clicked! Count:', clickCount.value)
+
+  // Reset the clicked state after 3 seconds
+  setTimeout(() => {
+    clicked.value = false
+  }, 3000)
+}
+
+const resetCount = () => {
+  clickCount.value = 0
+  clicked.value = false
+  console.log('Count reset!')
+}
+
+// Lifecycle
+onMounted(() => {
+  console.log('Component mounted with Vue 3 Composition API!')
+})
+<\/script>`,
   inputType: "vue",
   includeTailwind: true,
-  includeQuasar: true,
+  includeQuasar: false,
 });
 
 const frameworkOptions = [
@@ -231,6 +302,28 @@ const copyToClipboard = async () => {
   }
 };
 
+const validateForm = () => {
+  const errors = [];
+
+  if (!formData.value.title.trim()) {
+    errors.push("Component title is required");
+  }
+
+  if (!formData.value.framework) {
+    errors.push("Framework selection is required");
+  }
+
+  if (!formData.value.category) {
+    errors.push("Category selection is required");
+  }
+
+  if (!formData.value.code.trim()) {
+    errors.push("Component code is required");
+  }
+
+  return errors;
+};
+
 const resetForm = () => {
   formData.value = {
     title: "",
@@ -240,34 +333,146 @@ const resetForm = () => {
     tags: "",
     tagsArray: [],
     code: `<template>
-  <div class="p-4 bg-white rounded-lg shadow-sm">
-    <h2 class="text-xl font-semibold mb-2">New Component</h2>
-    <p class="text-gray-600">Edit this code to create your component</p>
-    <q-btn
-      color="primary"
-      label="Click Me"
-      class="mt-4"
-    />
+  <div class="p-6 bg-white rounded-lg shadow-lg border border-gray-200">
+    <h2 class="text-2xl font-bold text-gray-800 mb-3">{{ title }}</h2>
+    <p class="text-gray-600 mb-4">{{ description }}</p>
+
+    <button
+      @click="handleClick"
+      class="bg-blue-500 hover:bg-blue-600 text-white font-medium py-2 px-4 rounded-md transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+    >
+      Click Me
+    </button>
+
+    <div
+      v-if="clicked"
+      class="mt-4 inline-block bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm font-medium animate-pulse border border-green-200"
+    >
+      ✅ Button clicked successfully!
+    </div>
+
+    <div class="mt-4 flex items-center justify-between">
+      <div class="text-sm text-gray-500">
+        Count: <span class="font-semibold text-gray-700">{{ clickCount }}</span>
+      </div>
+      <button
+        v-if="clickCount > 0"
+        @click="resetCount"
+        class="text-xs text-red-500 hover:text-red-700 underline"
+      >
+        Reset
+      </button>
+    </div>
+
+    <div v-if="clickCount >= 5" class="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+      <p class="text-sm text-yellow-800">
+        🎉 Wow! You've clicked {{ clickCount }} times! You're really testing this component!
+      </p>
+    </div>
   </div>
-</template>`,
+</template>
+
+<script setup>
+import { ref, computed, onMounted } from 'vue'
+
+// Reactive data
+const title = ref('New Component')
+const description = ref('Edit this code to create your component with Vue 3 + Tailwind')
+const clicked = ref(false)
+const clickCount = ref(0)
+
+// Computed properties
+const isActive = computed(() => clickCount.value > 0)
+
+// Methods
+const handleClick = () => {
+  clicked.value = true
+  clickCount.value++
+
+  console.log('Button clicked! Count:', clickCount.value)
+
+  // Reset the clicked state after 3 seconds
+  setTimeout(() => {
+    clicked.value = false
+  }, 3000)
+}
+
+const resetCount = () => {
+  clickCount.value = 0
+  clicked.value = false
+  console.log('Count reset!')
+}
+
+// Lifecycle
+onMounted(() => {
+  console.log('Component mounted with Vue 3 Composition API!')
+})
+<\/script>`,
     inputType: "vue",
     includeTailwind: true,
-    includeQuasar: true,
+    includeQuasar: false,
   };
 };
 
-const handleSubmit = () => {
+const handleSubmit = async () => {
+  // Validate form before submitting
+  const validationErrors = validateForm();
+  if (validationErrors.length > 0) {
+    $q.notify({
+      type: "negative",
+      message: validationErrors.join(", "),
+      position: "top",
+    });
+    return;
+  }
+
   isSubmitting.value = true;
 
-  // Simulate API call
-  setTimeout(() => {
+  try {
+    // Prepare the payload for the backend
+    const payload = {
+      title: formData.value.title,
+      description: formData.value.description,
+      framework: formData.value.framework.value || formData.value.framework,
+      category: formData.value.category.value || formData.value.category,
+      tags: formData.value.tagsArray,
+      code: formData.value.code,
+      inputType: formData.value.inputType,
+      includeTailwind: formData.value.includeTailwind,
+      includeQuasar: formData.value.includeQuasar,
+      user_id: auth.authData.user.id,
+    };
+
+    console.log("Sending payload to backend:", payload);
+
+    // Call the backend API
+    const response = await saveComponent(payload);
+
+    console.log("Component saved successfully:", response.data);
+
+    // Show success message
     $q.notify({
       type: "positive",
       message: "Component uploaded successfully!",
+      position: "top",
     });
+
+    // Reset the form after successful upload
+    resetForm();
+  } catch (error) {
+    console.error("Error uploading component:", error);
+
+    // Show error message
+    $q.notify({
+      type: "negative",
+      message:
+        error.response?.data?.message ||
+        "Failed to upload component. Please try again.",
+      position: "top",
+    });
+  } finally {
     isSubmitting.value = false;
-    // In a real app, you would redirect to the component page or reset the form
-  }, 1500);
+  }
 };
 
 // Watch for tag input changes to add tags on comma

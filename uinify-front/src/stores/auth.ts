@@ -1,7 +1,7 @@
 import { defineStore } from "pinia";
 
 const defaultData = {
-  token: process.env.VITE_WGER_TOKEN || null,
+  user: null,
 };
 
 export const getAuthStorage = () => {

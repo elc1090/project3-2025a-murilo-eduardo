@@ -6,8 +6,7 @@ import { useAuthStore } from "src/stores/auth";
 
 export const isAuthenticated = () => {
   const auth = useAuthStore();
-  console.log("🚀 ~ isAuthenticated ~ auth:", auth.authData);
-  return !!auth?.authData?.token;
+  return !!auth?.authData?.user;
 };
 
 /*
@@ -32,7 +31,6 @@ export default route(function (/* { store, ssrContext } */) {
 
   Router.beforeEach((to, from, next) => {
     const hasAuth = isAuthenticated();
-    console.log("🚀 ~ Router.beforeEach ~ to.name:", to.name, hasAuth);
     if (
       typeof to.name === "string" &&
       ["login", "unauthorized", "notfound"].includes(to.name)
