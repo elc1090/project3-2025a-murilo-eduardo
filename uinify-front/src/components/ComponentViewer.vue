@@ -187,7 +187,7 @@
           v-if="isLoading"
           class="absolute inset-0 flex items-center justify-center bg-white bg-opacity-90"
         >
-          <div class="text-center">
+          <div class="flex flex-col items-center w-full">
             <q-spinner color="primary" size="3em" class="mb-4" />
             <p class="text-gray-700 font-medium">Rendering component...</p>
             <p class="text-gray-500 text-sm">{{ loadingMessage }}</p>
@@ -499,19 +499,60 @@ const processedContent = computed(() => {
                         // Handle Options API format
                         let cleanScript = scriptContent;
 
+                        // Remove import statements
+                        cleanScript = cleanScript.replace(/import\\s+.*?from\\s+['"][^'"]*['"];?/g, '');
+
                         // Remove export default and extract the object
                         if (cleanScript.includes('export default')) {
                           cleanScript = cleanScript.replace(/export\\s+default\\s*/, '');
                         }
 
                         // If it's wrapped in an object, extract it
-                        if (cleanScript.startsWith('{') && cleanScript.endsWith('}')) {
-                          cleanScript = cleanScript.slice(1, -1);
+                        if (cleanScript.trim().startsWith('{') && cleanScript.trim().endsWith('}')) {
+                          cleanScript = cleanScript.trim().slice(1, -1);
                         }
 
-                        // Create a safer evaluation
-                        const safeEval = new Function('return {' + cleanScript + '}');
-                        componentOptions = safeEval();
+                        // Create a safer evaluation with better error handling
+                        try {
+                          const safeEval = new Function('return {' + cleanScript + '}');
+                          componentOptions = safeEval();
+                          console.log('✅ Options API parsed successfully:', Object.keys(componentOptions));
+                        } catch (evalError) {
+                          console.warn('⚠️ Could not parse Options API object, trying alternative approach:', evalError);
+
+                          // Try to extract individual sections
+                          componentOptions = {};
+
+                          // Extract data function
+                          const dataMatch = cleanScript.match(/data\\s*\\(\\s*\\)\\s*\\{([^}]+)\\}/);
+                          if (dataMatch) {
+                            try {
+                              componentOptions.data = new Function('return function() { ' + dataMatch[1] + ' }')();
+                            } catch (e) {
+                              console.warn('Could not parse data function:', e);
+                            }
+                          }
+
+                          // Extract methods
+                          const methodsMatch = cleanScript.match(/methods\\s*:\\s*\\{([^}]+)\\}/);
+                          if (methodsMatch) {
+                            try {
+                              componentOptions.methods = new Function('return {' + methodsMatch[1] + '}')();
+                            } catch (e) {
+                              console.warn('Could not parse methods:', e);
+                            }
+                          }
+
+                          // Extract computed
+                          const computedMatch = cleanScript.match(/computed\\s*:\\s*\\{([^}]+)\\}/);
+                          if (computedMatch) {
+                            try {
+                              componentOptions.computed = new Function('return {' + computedMatch[1] + '}')();
+                            } catch (e) {
+                              console.warn('Could not parse computed:', e);
+                            }
+                          }
+                        }
                       }
 
                       console.log('✅ Script options extracted successfully');
@@ -542,17 +583,105 @@ const processedContent = computed(() => {
                     try {
                       // Create a safe execution context with Vue 3 APIs
                       const setupContext = {
-                        ref, reactive, computed, onMounted,
+                        ref, reactive, computed, onMounted, watch: Vue.watch,
+                        nextTick: Vue.nextTick, watchEffect: Vue.watchEffect,
                         console: console
                       };
 
-                      // Execute the script setup content
+                      // Clean and prepare the script content
+                      let cleanScriptContent = componentOptions.scriptContent;
+
+                      // Remove import statements (they won't work in this context)
+                      cleanScriptContent = cleanScriptContent.replace(/import\\s+.*?from\\s+['"][^'"]*['"];?/g, '');
+
+                      // Remove defineProps, defineEmits calls and capture them
+                      const propsMatch = cleanScriptContent.match(/const\\s+props\\s*=\\s*defineProps\\s*\\(([^)]+)\\)/);
+                      const emitsMatch = cleanScriptContent.match(/const\\s+emits\\s*=\\s*defineEmits\\s*\\(([^)]+)\\)/);
+
+                      cleanScriptContent = cleanScriptContent.replace(/const\\s+props\\s*=\\s*defineProps\\s*\\([^)]+\\);?/g, '');
+                      cleanScriptContent = cleanScriptContent.replace(/const\\s+emits\\s*=\\s*defineEmits\\s*\\([^)]+\\);?/g, '');
+
+                      // Extract all variable declarations and function definitions with improved patterns
+                      const variableMatches = cleanScriptContent.match(/(?:const|let|var)\\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\\s*=/g) || [];
+                      const arrowFunctionMatches = cleanScriptContent.match(/(?:const|let|var)\\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\\s*=\\s*(?:\\([^)]*\\)\\s*=>|\\([^)]*\\)\\s*=>\\s*\\{|[a-zA-Z_$][a-zA-Z0-9_$]*\\s*=>)/g) || [];
+                      const regularFunctionMatches = cleanScriptContent.match(/(?:const|let|var)\\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\\s*=\\s*function/g) || [];
+                      const directFunctionMatches = cleanScriptContent.match(/function\\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\\s*\\(/g) || [];
+
+                      // Also look for reactive/ref declarations
+                      const refMatches = cleanScriptContent.match(/(?:const|let|var)\\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\\s*=\\s*ref\\s*\\(/g) || [];
+                      const reactiveMatches = cleanScriptContent.match(/(?:const|let|var)\\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\\s*=\\s*reactive\\s*\\(/g) || [];
+                      const computedMatches = cleanScriptContent.match(/(?:const|let|var)\\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\\s*=\\s*computed\\s*\\(/g) || [];
+
+                      // Extract variable names
+                      const extractedVars = new Set();
+
+                      // Helper function to extract variable name from match
+                      const extractVarName = (match, pattern) => {
+                        try {
+                          const result = match.match(pattern);
+                          return result ? result[1] : null;
+                        } catch (e) {
+                          console.warn('Error extracting variable name from:', match, e);
+                          return null;
+                        }
+                      };
+
+                      // Process all variable declarations
+                      variableMatches.forEach(match => {
+                        const varName = extractVarName(match, /(?:const|let|var)\\s+([a-zA-Z_$][a-zA-Z0-9_$]*)/);
+                        if (varName) extractedVars.add(varName);
+                      });
+
+                      // Process arrow functions
+                      arrowFunctionMatches.forEach(match => {
+                        const funcName = extractVarName(match, /(?:const|let|var)\\s+([a-zA-Z_$][a-zA-Z0-9_$]*)/);
+                        if (funcName) extractedVars.add(funcName);
+                      });
+
+                      // Process regular functions
+                      regularFunctionMatches.forEach(match => {
+                        const funcName = extractVarName(match, /(?:const|let|var)\\s+([a-zA-Z_$][a-zA-Z0-9_$]*)/);
+                        if (funcName) extractedVars.add(funcName);
+                      });
+
+                      // Process direct function declarations
+                      directFunctionMatches.forEach(match => {
+                        const funcName = extractVarName(match, /function\\s+([a-zA-Z_$][a-zA-Z0-9_$]*)/);
+                        if (funcName) extractedVars.add(funcName);
+                      });
+
+                      // Process reactive declarations
+                      refMatches.forEach(match => {
+                        const varName = extractVarName(match, /(?:const|let|var)\\s+([a-zA-Z_$][a-zA-Z0-9_$]*)/);
+                        if (varName) extractedVars.add(varName);
+                      });
+
+                      reactiveMatches.forEach(match => {
+                        const varName = extractVarName(match, /(?:const|let|var)\\s+([a-zA-Z_$][a-zA-Z0-9_$]*)/);
+                        if (varName) extractedVars.add(varName);
+                      });
+
+                      computedMatches.forEach(match => {
+                        const varName = extractVarName(match, /(?:const|let|var)\\s+([a-zA-Z_$][a-zA-Z0-9_$]*)/);
+                        if (varName) extractedVars.add(varName);
+                      });
+
+                      // Create dynamic return statement
+                      const returnVars = Array.from(extractedVars).join(', ');
+                      const returnStatement = returnVars ? 'return { ' + returnVars + ' };' : 'return {};';
+
+                      console.log('🔍 Detected variables/functions:', Array.from(extractedVars));
+
+                      // Execute the script setup content with dynamic return
                       const setupFunction = new Function(
-                        'ref', 'reactive', 'computed', 'onMounted', 'console',
-                        componentOptions.scriptContent + '; return { title, description, clicked, clickCount, isActive, handleClick, resetCount };'
+                        'ref', 'reactive', 'computed', 'onMounted', 'watch', 'nextTick', 'watchEffect', 'console',
+                        cleanScriptContent + '; ' + returnStatement
                       );
 
-                      const setupResult = setupFunction(ref, reactive, computed, onMounted, console);
+                      const setupResult = setupFunction(
+                        ref, reactive, computed, onMounted,
+                        Vue.watch, Vue.nextTick, Vue.watchEffect, console
+                      );
 
                       // Setup lifecycle for render time tracking
                       onMounted(() => {
@@ -561,10 +690,12 @@ const processedContent = computed(() => {
                         reportSuccess(renderTime);
                       });
 
+                      console.log('✅ Script setup executed successfully with result:', Object.keys(setupResult));
                       return setupResult;
 
                     } catch (e) {
                       console.warn('⚠️ Could not execute script setup, using fallback:', e);
+                      console.log('Script content that failed:', componentOptions.scriptContent);
                       // Fallback to default setup
                       return createDefaultSetup();
                     }
@@ -646,14 +777,23 @@ const processedContent = computed(() => {
 
                   function createOptionsAPISetup() {
                     // Create reactive data from Options API
-                    const componentData = reactive({
+                    let componentData = reactive({
                       message: 'Hello from component!',
                       clicked: false,
                       title: 'New Component',
-                      description: 'Edit this code to create your component',
-                      // Merge any data from extracted script
-                      ...(componentOptions.data ? componentOptions.data() : {})
+                      description: 'Edit this code to create your component'
                     });
+
+                    // Merge any data from extracted script
+                    if (componentOptions.data && typeof componentOptions.data === 'function') {
+                      try {
+                        const extractedData = componentOptions.data();
+                        componentData = reactive({ ...componentData, ...extractedData });
+                        console.log('✅ Merged Options API data:', Object.keys(extractedData));
+                      } catch (e) {
+                        console.warn('⚠️ Could not execute data function:', e);
+                      }
+                    }
 
                     // Toast notification function
                     const showToast = (message, type = 'success') => {
@@ -680,27 +820,44 @@ const processedContent = computed(() => {
                       }, 3000);
                     };
 
-                    // Create methods
-                    const handleClick = () => {
-                      console.log('Button clicked!');
-                      componentData.clicked = true;
+                    // Create default methods
+                    const defaultMethods = {
+                      handleClick: () => {
+                        console.log('Button clicked!');
+                        componentData.clicked = true;
 
-                      // Show toast notification instead of alert (sandbox safe)
-                      showToast('✅ Button clicked successfully!');
-                      console.log('✅ Button clicked successfully!');
+                        // Show toast notification instead of alert (sandbox safe)
+                        showToast('✅ Button clicked successfully!');
+                        console.log('✅ Button clicked successfully!');
 
-                      // Reset after 3 seconds
-                      setTimeout(() => {
-                        componentData.clicked = false;
-                      }, 3000);
+                        // Reset after 3 seconds
+                        setTimeout(() => {
+                          componentData.clicked = false;
+                        }, 3000);
+                      }
                     };
 
                     // Merge any methods from extracted script
                     const extractedMethods = componentOptions.methods || {};
+
+                    // Bind extracted methods to the component data context
+                    const boundMethods = {};
+                    Object.keys(extractedMethods).forEach(methodName => {
+                      if (typeof extractedMethods[methodName] === 'function') {
+                        boundMethods[methodName] = extractedMethods[methodName].bind({
+                          ...componentData,
+                          ...defaultMethods,
+                          showToast
+                        });
+                      }
+                    });
+
                     const methods = {
-                      handleClick,
-                      ...extractedMethods
+                      ...defaultMethods,
+                      ...boundMethods
                     };
+
+                    console.log('✅ Methods prepared:', Object.keys(methods));
 
                     // Setup lifecycle
                     onMounted(() => {
@@ -714,12 +871,29 @@ const processedContent = computed(() => {
                       }
                     });
 
+                    // Process computed properties
+                    const extractedComputed = componentOptions.computed || {};
+                    const processedComputed = {};
+
+                    Object.keys(extractedComputed).forEach(computedName => {
+                      if (typeof extractedComputed[computedName] === 'function') {
+                        // Convert computed function to Vue 3 computed
+                        processedComputed[computedName] = computed(() => {
+                          return extractedComputed[computedName].call({
+                            ...componentData,
+                            ...methods
+                          });
+                        });
+                      }
+                    });
+
+                    console.log('✅ Computed properties prepared:', Object.keys(processedComputed));
+
                     // Return everything to template
                     return {
                       ...componentData,
                       ...methods,
-                      // Merge any computed from extracted script
-                      ...(componentOptions.computed || {})
+                      ...processedComputed
                     };
                   }
                 },
